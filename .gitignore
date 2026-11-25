@@ -1,0 +1,74 @@
+# TTS service
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Model weights, distributed separately
+models/
+
+
+# torch.compile and inductor caches
+.inductor-cache/
+*.inductor-cache/
+torch_compile_cache/
+
+# Logs
+*.log
+logs/
+
+# Generated and reference audio
+# Use "git add -f your.wav" only when audio must be tracked.
+*.wav
+*.pcm
+*.mp3
+*.flac
+*.ogg
+*.m4a
+out/
+samples/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+api_key.txt
+.agents/
+.aws/
+.codex/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.bak
+*.orig

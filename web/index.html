@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>语音合成</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <script src="tailwind.min.js"></script>
+  <link href="/web/font-awesome.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="/web/style.css">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#165DFF',
+            secondary: '#6B7280',
+            light: '#F3F4F6',
+            dark: '#1F2937'
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+</head>
+
+<body class="bg-gray-50 font-sans h-screen overflow-hidden">
+  <div class="h-full flex flex-col">
+
+    <header class="flex-none bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-primary text-white flex items-center justify-center">
+          <i class="fa fa-microphone"></i>
+        </div>
+        <div>
+          <h1 class="text-lg font-semibold text-dark leading-tight">语音合成</h1>
+          <p class="text-xs text-secondary">预设参考 · OpenAI 兼容接口</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-4 text-xs text-secondary">
+        <span id="status-device" class="px-2 py-1 rounded bg-light">GPU: —</span>
+        <span id="status-compile" class="px-2 py-1 rounded bg-light">compile: —</span>
+        <span id="status-numstep" class="px-2 py-1 rounded bg-light">num_step: —</span>
+        <span id="status-gpu" class="px-2 py-1 rounded bg-light">显存: —</span>
+        <span id="status-queue" class="px-2 py-1 rounded bg-light">队列: —</span>
+        <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-gray-300" title="服务状态"></span>
+      </div>
+    </header>
+
+    <main class="flex-1 flex overflow-hidden">
+      <section class="flex-1 flex flex-col overflow-hidden">
+        <div class="flex-1 overflow-y-auto">
+          <div class="max-w-3xl mx-auto px-6 py-6 space-y-5">
+
+            <div class="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+              <h2 class="font-medium text-dark flex items-center gap-2">
+                <i class="fa fa-comment-dots text-primary"></i> 语音合成
+              </h2>
+
+              <div class="space-y-1">
+                <label class="text-xs font-medium text-secondary" for="synth-voice">音色</label>
+                <select id="synth-voice"
+                  class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary disabled:opacity-60"
+                  disabled>
+                  <option value="">加载中…</option>
+                </select>
+              </div>
+
+              <div class="space-y-1">
+                <div class="flex items-center justify-between">
+                  <label class="text-xs font-medium text-secondary">合成文本</label>
+                  <span id="text-count" class="text-xs text-secondary">0 / 2000</span>
+                </div>
+                <textarea id="synth-text" rows="5" placeholder="输入要合成的文本…"
+                  class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"></textarea>
+              </div>
+
+              <div class="grid grid-cols-2 gap-4">
+                <div class="space-y-1">
+                  <label class="text-xs font-medium text-secondary">质量 / 步数</label>
+                  <div class="flex rounded-lg border border-gray-200 overflow-hidden">
+                    <button data-step="32" class="numstep-btn flex-1 text-sm px-3 py-2 border-r border-gray-200">32 · 高质量</button>
+                    <button data-step="16" class="numstep-btn flex-1 text-sm px-3 py-2">16 · 快速</button>
+                  </div>
+                </div>
+                <div class="space-y-1">
+                  <label class="text-xs font-medium text-secondary">语速 <span id="speed-label" class="text-primary font-medium">1.0</span></label>
+                  <input id="synth-speed" type="range" min="0.5" max="2" step="0.1" value="1"
+                    class="w-full accent-primary">
+                </div>
+              </div>
+
+              <div class="flex items-center gap-3 pt-1">
+                <button id="btn-synth"
+                  class="bg-primary hover:bg-blue-600 text-white text-sm rounded-lg px-5 py-2.5 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                  <i class="fa fa-play-circle mr-1"></i> 生成语音
+                </button>
+                <button id="btn-cancel"
+                  class="hidden bg-white border border-gray-200 hover:border-red-400 hover:text-red-500 text-sm rounded-lg px-4 py-2.5 transition">
+                  <i class="fa fa-stop mr-1"></i> 取消
+                </button>
+                <span id="synth-progress" class="text-xs text-secondary"></span>
+              </div>
+            </div>
+
+            <div id="result-card" class="hidden bg-white rounded-xl border border-gray-200 p-5 space-y-3">
+              <div class="flex items-center justify-between">
+                <h2 class="font-medium text-dark flex items-center gap-2">
+                  <i class="fa fa-headphones text-primary"></i> 合成结果
+                </h2>
+                <div class="flex items-center gap-2">
+                  <a id="btn-download" download="speech.wav"
+                    class="text-sm border border-gray-200 hover:border-primary hover:text-primary rounded-lg px-3 py-1.5 transition">
+                    <i class="fa fa-download mr-1"></i> 下载
+                  </a>
+                  <button id="btn-replay"
+                    class="text-sm border border-gray-200 hover:border-primary hover:text-primary rounded-lg px-3 py-1.5 transition">
+                    <i class="fa fa-refresh mr-1"></i> 重放
+                  </button>
+                </div>
+              </div>
+              <audio id="result-audio" controls class="w-full"></audio>
+              <div id="result-meta" class="flex flex-wrap gap-x-5 gap-y-1 text-xs text-secondary"></div>
+            </div>
+
+            <div class="text-xs text-secondary/80 leading-relaxed px-1">
+              <p>· 预设参考由服务启动时的 <code class="px-1 bg-light rounded">voices/</code> 目录加载，修改后需重启服务。</p>
+              <p>· 输出格式为 <code class="px-1 bg-light rounded">wav</code>（24 kHz 单声道）或 <code class="px-1 bg-light rounded">pcm</code>（裸 s16le）。</p>
+              <p>· 生成串行执行，多个请求会排队；队列满时返回 429。</p>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 hidden px-4 py-2.5 rounded-lg text-sm text-white shadow-lg z-50"></div>
+
+  <script src="index.js?v=24"></script>
+</body>
+
+</html>

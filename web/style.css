@@ -1,0 +1,47 @@
+main ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+main ::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+
+main ::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+main ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.numstep-btn {
+  color: #6b7280;
+  background: #fff;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.numstep-btn:hover {
+  background: #f9fafb;
+}
+
+.numstep-btn.active {
+  background: #165DFF;
+  color: #fff;
+  font-weight: 500;
+}
+
+audio {
+  height: 40px;
+  border-radius: 0.5rem;
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
+
+.generating {
+  animation: pulse-soft 1.2s ease-in-out infinite;
+}
