@@ -42,7 +42,12 @@ RUN groupadd --gid 10001 app \
 WORKDIR /app
 
 COPY --chown=app:app pyproject.toml README.md LICENSE ./
-COPY --chown=app:app omnivoice_server.py omnivoice.py omnivoice_flashinfer.py inference.py ./
+COPY --chown=app:app \
+    omnivoice_server.py \
+    omnivoice.py \
+    omnivoice_flashinfer.py \
+    omnivoice_cli.py \
+    ./
 COPY --chown=app:app web ./web
 
 RUN /opt/venv/bin/pip install --no-cache-dir \

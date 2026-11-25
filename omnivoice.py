@@ -1892,15 +1892,7 @@ class VoiceClonePrompt:
     ref_rms: float
 
     def save(self, path: str) -> None:
-        """Save this prompt to ``path`` for reuse in a later session.
-
-        The file stores a plain dict with the audio tokens moved to CPU, so
-        it can be loaded with ``torch.load(weights_only=True)`` (the default
-        since torch 2.6) and is portable across devices.
-
-        Args:
-            path: Destination file path (e.g. ``"my_voice.pt"``).
-        """
+        """Save this prompt to ``path`` for reuse in a later session."""
         torch.save(
             {
                 "format_version": _VOICE_CLONE_PROMPT_FORMAT_VERSION,

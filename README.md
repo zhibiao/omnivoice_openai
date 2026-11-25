@@ -8,7 +8,7 @@ Standalone OmniVoice text-to-speech service with an OpenAI-compatible API.
 - Python 3.10+
 - NVIDIA GPU with CUDA
 - Model files in `models/OmniVoice/`
-- Reference audio and UTF-8 transcript pairs in `voices/`
+- Source audio and UTF-8 transcripts in `assets/`
 
 ## Install
 
@@ -22,17 +22,41 @@ Optional FlashInfer support:
 uv sync --extra flashinfer
 ```
 
-## Prepare voices
+## Create a voice
 
-Each voice requires a matching audio and text file:
+Each voice requires a matching audio and text file in `assets/`:
 
 ```text
-voices/
+assets/
 ├── nana.wav
 └── nana.txt
 ```
 
 Supported audio formats: `wav`, `flac`, `mp3`, and `ogg`.
+
+Create or rebuild all voice prompts:
+
+```bash
+.venv/bin/python omnivoice_cli.py create-prompt \
+  --model models/OmniVoice \
+  --assets-dir assets \
+  --voices-dir voices \
+  --device cuda:0 \
+  --dtype float16
+```
+
+For `assets/nana.wav` and `assets/nana.txt`, this creates:
+
+```text
+voices/
+└── nana.pt
+```
+
+Use `--device cpu --dtype float32` when preparing prompts without a GPU.
+The prompt name is derived from the source filename. To add another voice,
+create `<name>.wav` and `<name>.txt` in `assets/`, then run the command again.
+
+The server loads `voices/*.pt` only and does not read files from `assets/`.
 
 ## Start the server
 
@@ -111,15 +135,19 @@ response.write_to_file("output.wav")
 
 ## CLI
 
+Create with a saved prompt:
+
 ```bash
-.venv/bin/python inference.py \
+.venv/bin/python omnivoice_cli.py clone \
   --text "Hello, this is OmniVoice." \
   --output output.wav \
-  --ref_audio voices/nana.wav \
-  --ref_text "Reference transcript." \
+  --prompt voices/nana.pt \
   --language English \
   --num_step 32
 ```
+
+Use `--ref_audio assets/nana.wav --ref_text "Reference transcript."` instead
+of `--prompt` to clone directly from reference files.
 
 Use `--flashinfer off` to disable FlashInfer or `--flashinfer on` to require it.
 
@@ -151,6 +179,6 @@ docker build --build-arg INSTALL_FLASHINFER=true -t omnivoice-openai .
 | `--device` | `cuda:0` | CUDA device |
 | `--num-step` | `32` | Default generation steps |
 | `--flashinfer` | `auto` | `auto`, `on`, or `off` |
-| `--voices-dir` | `voices` | Voice preset directory |
+| `--voices-dir` | `voices` | Voice prompt directory |
 | `--default-voice` | `nana` | Default voice |
 | `--api-key` | empty | Optional bearer token |

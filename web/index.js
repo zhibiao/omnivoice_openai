@@ -40,7 +40,7 @@
     btn.disabled = busy;
     if (busy) {
       if (!btn.dataset.label) btn.dataset.label = btn.innerHTML;
-      btn.innerHTML = '<i class="fa fa-spinner fa-spin mr-1"></i> ' + (label || '处理中…');
+      btn.innerHTML = '<i class="fa fa-spinner fa-spin mr-1"></i> ' + (label || 'Processing...');
     } else if (btn.dataset.label) {
       btn.innerHTML = btn.dataset.label;
       delete btn.dataset.label;
@@ -54,14 +54,14 @@
       $('status-device').textContent = 'GPU: ' + (h.device || '-');
       $('status-compile').textContent = 'compile: ' + (h.compile || '-');
       $('status-numstep').textContent = 'num_step: ' + h.num_step_default;
-      $('status-gpu').textContent = '显存: ' + (h.gpu ? h.gpu.free_gb + ' / ' + h.gpu.total_gb + ' GB 可用' : '-');
-      $('status-queue').textContent = '队列: ' + (h.queue ? h.queue.pending + '/' + h.queue.max : '-');
+      $('status-gpu').textContent = 'Memory: ' + (h.gpu ? h.gpu.free_gb + ' / ' + h.gpu.total_gb + ' GB free' : '-');
+      $('status-queue').textContent = 'Queue: ' + (h.queue ? h.queue.pending + '/' + h.queue.max : '-');
       var dot = $('status-dot');
       dot.className = 'w-2.5 h-2.5 rounded-full ' + (h.gpu && h.gpu.free_gb < 1.0 ? 'bg-amber-400' : 'bg-green-500');
-      dot.title = '服务正常';
+      dot.title = 'Service healthy';
     } catch (e) {
       $('status-dot').className = 'w-2.5 h-2.5 rounded-full bg-red-500';
-      $('status-dot').title = '服务不可用: ' + e.message;
+      $('status-dot').title = 'Service unavailable: ' + e.message;
     }
   }
 
@@ -70,7 +70,7 @@
     try {
       var res = await api('/v1/audio/voices');
       var data = (await res.json()).data || [];
-      if (!data.length) throw new Error('没有可用音色');
+      if (!data.length) throw new Error('No voices available');
       select.innerHTML = data.map(function (voice) {
         return '<option value="' + voice.id + '">' + voice.name + ' (' + voice.duration.toFixed(1) + 's)</option>';
       }).join('');
@@ -79,8 +79,8 @@
       select.value = state.voice;
       select.disabled = false;
     } catch (e) {
-      select.innerHTML = '<option value="">音色加载失败</option>';
-      toast('加载音色失败：' + e.message, 'error');
+      select.innerHTML = '<option value="">Failed to load voices</option>';
+      toast('Failed to load voices: ' + e.message, 'error');
     }
   }
 
@@ -101,8 +101,8 @@
 
   async function synthesize() {
     var text = $('synth-text').value.trim();
-    if (!state.voice) return toast('请选择音色', 'error');
-    if (!text) return toast('请输入合成文本', 'error');
+    if (!state.voice) return toast('Select a voice', 'error');
+    if (!text) return toast('Enter text to synthesize', 'error');
     if (state.controller) return;
 
     var btn = $('btn-synth');
@@ -110,13 +110,13 @@
     var started = Date.now();
 
     state.controller = new AbortController();
-    setBusy(btn, true, '生成中…');
+    setBusy(btn, true, 'Generating...');
     btn.classList.add('generating');
     cancelBtn.classList.remove('hidden');
-    setProgress('排队 / 生成中…');
+    setProgress('Queued / Generating...');
 
     state.timer = setInterval(function () {
-      setProgress('生成中… ' + ((Date.now() - started) / 1000).toFixed(1) + 's');
+      setProgress('Generating... ' + ((Date.now() - started) / 1000).toFixed(1) + 's');
     }, 100);
 
     try {
@@ -153,22 +153,22 @@
       dl.setAttribute('download', 'speech_' + Date.now() + '.wav');
 
       $('result-meta').innerHTML =
-        '<span><i class="fa fa-clock-o mr-1"></i>音频 ' + dur.toFixed(2) + 's</span>' +
-        '<span><i class="fa fa-hourglass-half mr-1"></i>耗时 ' + wall.toFixed(2) + 's</span>' +
-        '<span><i class="fa fa-bolt mr-1"></i>RTF ' + rtf + '（约 ' + (rtf && rtf !== '-' ? (1 / parseFloat(rtf)).toFixed(1) : '-') + '× 实时）</span>' +
+        '<span><i class="fa fa-clock-o mr-1"></i>Audio ' + dur.toFixed(2) + 's</span>' +
+        '<span><i class="fa fa-hourglass-half mr-1"></i>Elapsed ' + wall.toFixed(2) + 's</span>' +
+        '<span><i class="fa fa-bolt mr-1"></i>RTF ' + rtf + ' (about ' + (rtf && rtf !== '-' ? (1 / parseFloat(rtf)).toFixed(1) : '-') + 'x realtime)</span>' +
         '<span><i class="fa fa-sliders mr-1"></i>num_step ' + ns + '</span>' +
         '<span><i class="fa fa-microphone mr-1"></i>' + state.voice + '</span>' +
         '<span><i class="fa fa-file-audio-o mr-1"></i>' + (blob.size / 1024).toFixed(0) + ' KB · WAV</span>';
 
-      setProgress('完成');
-      toast('合成完成（' + dur.toFixed(1) + 's 音频）');
+      setProgress('Complete');
+      toast('Speech generated (' + dur.toFixed(1) + 's audio)');
     } catch (e) {
       if (e.name === 'AbortError') {
-        setProgress('已取消');
-        toast('已取消', 'warn');
+        setProgress('Cancelled');
+        toast('Cancelled', 'warn');
       } else {
-        setProgress('失败');
-        toast('合成失败：' + e.message, 'error');
+        setProgress('Failed');
+        toast('Generation failed: ' + e.message, 'error');
       }
     } finally {
       stopTimer();

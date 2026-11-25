@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>语音合成</title>
+  <title>Text to Speech</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <script src="tailwind.min.js"></script>
   <link href="/web/font-awesome.min.css" rel="stylesheet">
@@ -38,17 +38,17 @@
           <i class="fa fa-microphone"></i>
         </div>
         <div>
-          <h1 class="text-lg font-semibold text-dark leading-tight">语音合成</h1>
-          <p class="text-xs text-secondary">预设参考 · OpenAI 兼容接口</p>
+          <h1 class="text-lg font-semibold text-dark leading-tight">Text to Speech</h1>
+          <p class="text-xs text-secondary">Preset voices · OpenAI-compatible API</p>
         </div>
       </div>
       <div class="flex items-center gap-4 text-xs text-secondary">
         <span id="status-device" class="px-2 py-1 rounded bg-light">GPU: —</span>
         <span id="status-compile" class="px-2 py-1 rounded bg-light">compile: —</span>
         <span id="status-numstep" class="px-2 py-1 rounded bg-light">num_step: —</span>
-        <span id="status-gpu" class="px-2 py-1 rounded bg-light">显存: —</span>
-        <span id="status-queue" class="px-2 py-1 rounded bg-light">队列: —</span>
-        <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-gray-300" title="服务状态"></span>
+        <span id="status-gpu" class="px-2 py-1 rounded bg-light">Memory: —</span>
+        <span id="status-queue" class="px-2 py-1 rounded bg-light">Queue: —</span>
+        <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-gray-300" title="Service status"></span>
       </div>
     </header>
 
@@ -59,37 +59,37 @@
 
             <div class="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
               <h2 class="font-medium text-dark flex items-center gap-2">
-                <i class="fa fa-comment-dots text-primary"></i> 语音合成
+                <i class="fa fa-comment-dots text-primary"></i> Speech Synthesis
               </h2>
 
               <div class="space-y-1">
-                <label class="text-xs font-medium text-secondary" for="synth-voice">音色</label>
+                <label class="text-xs font-medium text-secondary" for="synth-voice">Voice</label>
                 <select id="synth-voice"
                   class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary disabled:opacity-60"
                   disabled>
-                  <option value="">加载中…</option>
+                  <option value="">Loading...</option>
                 </select>
               </div>
 
               <div class="space-y-1">
                 <div class="flex items-center justify-between">
-                  <label class="text-xs font-medium text-secondary">合成文本</label>
+                  <label class="text-xs font-medium text-secondary">Text</label>
                   <span id="text-count" class="text-xs text-secondary">0 / 2000</span>
                 </div>
-                <textarea id="synth-text" rows="5" placeholder="输入要合成的文本…"
+                <textarea id="synth-text" rows="5" placeholder="Enter text to synthesize..."
                   class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"></textarea>
               </div>
 
               <div class="grid grid-cols-2 gap-4">
                 <div class="space-y-1">
-                  <label class="text-xs font-medium text-secondary">质量 / 步数</label>
+                  <label class="text-xs font-medium text-secondary">Quality / Steps</label>
                   <div class="flex rounded-lg border border-gray-200 overflow-hidden">
-                    <button data-step="32" class="numstep-btn flex-1 text-sm px-3 py-2 border-r border-gray-200">32 · 高质量</button>
-                    <button data-step="16" class="numstep-btn flex-1 text-sm px-3 py-2">16 · 快速</button>
+                    <button data-step="32" class="numstep-btn flex-1 text-sm px-3 py-2 border-r border-gray-200">32 · High Quality</button>
+                    <button data-step="16" class="numstep-btn flex-1 text-sm px-3 py-2">16 · Fast</button>
                   </div>
                 </div>
                 <div class="space-y-1">
-                  <label class="text-xs font-medium text-secondary">语速 <span id="speed-label" class="text-primary font-medium">1.0</span></label>
+                  <label class="text-xs font-medium text-secondary">Speed <span id="speed-label" class="text-primary font-medium">1.0</span></label>
                   <input id="synth-speed" type="range" min="0.5" max="2" step="0.1" value="1"
                     class="w-full accent-primary">
                 </div>
@@ -98,11 +98,11 @@
               <div class="flex items-center gap-3 pt-1">
                 <button id="btn-synth"
                   class="bg-primary hover:bg-blue-600 text-white text-sm rounded-lg px-5 py-2.5 transition disabled:opacity-50 disabled:cursor-not-allowed">
-                  <i class="fa fa-play-circle mr-1"></i> 生成语音
+                  <i class="fa fa-play-circle mr-1"></i> Generate Speech
                 </button>
                 <button id="btn-cancel"
                   class="hidden bg-white border border-gray-200 hover:border-red-400 hover:text-red-500 text-sm rounded-lg px-4 py-2.5 transition">
-                  <i class="fa fa-stop mr-1"></i> 取消
+                  <i class="fa fa-stop mr-1"></i> Cancel
                 </button>
                 <span id="synth-progress" class="text-xs text-secondary"></span>
               </div>
@@ -111,16 +111,16 @@
             <div id="result-card" class="hidden bg-white rounded-xl border border-gray-200 p-5 space-y-3">
               <div class="flex items-center justify-between">
                 <h2 class="font-medium text-dark flex items-center gap-2">
-                  <i class="fa fa-headphones text-primary"></i> 合成结果
+                  <i class="fa fa-headphones text-primary"></i> Result
                 </h2>
                 <div class="flex items-center gap-2">
                   <a id="btn-download" download="speech.wav"
                     class="text-sm border border-gray-200 hover:border-primary hover:text-primary rounded-lg px-3 py-1.5 transition">
-                    <i class="fa fa-download mr-1"></i> 下载
+                    <i class="fa fa-download mr-1"></i> Download
                   </a>
                   <button id="btn-replay"
                     class="text-sm border border-gray-200 hover:border-primary hover:text-primary rounded-lg px-3 py-1.5 transition">
-                    <i class="fa fa-refresh mr-1"></i> 重放
+                    <i class="fa fa-refresh mr-1"></i> Replay
                   </button>
                 </div>
               </div>
@@ -129,9 +129,9 @@
             </div>
 
             <div class="text-xs text-secondary/80 leading-relaxed px-1">
-              <p>· 预设参考由服务启动时的 <code class="px-1 bg-light rounded">voices/</code> 目录加载，修改后需重启服务。</p>
-              <p>· 输出格式为 <code class="px-1 bg-light rounded">wav</code>（24 kHz 单声道）或 <code class="px-1 bg-light rounded">pcm</code>（裸 s16le）。</p>
-              <p>· 生成串行执行，多个请求会排队；队列满时返回 429。</p>
+              <p>· Preset prompts are loaded from <code class="px-1 bg-light rounded">voices/</code> at startup. Restart the service after changes.</p>
+              <p>· Output is <code class="px-1 bg-light rounded">wav</code> (24 kHz mono) or <code class="px-1 bg-light rounded">pcm</code> (raw s16le).</p>
+              <p>· Requests are processed serially. The API returns 429 when the queue is full.</p>
             </div>
 
           </div>
@@ -143,7 +143,7 @@
 
   <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 hidden px-4 py-2.5 rounded-lg text-sm text-white shadow-lg z-50"></div>
 
-  <script src="index.js?v=24"></script>
+  <script src="index.js?v=25"></script>
 </body>
 
 </html>

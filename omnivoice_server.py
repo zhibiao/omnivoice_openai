@@ -36,8 +36,7 @@ DEFAULT_VOICES_DIR = str(_PKG_DIR / "voices")
 DEFAULT_CACHE_DIR = str(_PKG_DIR / ".inductor-cache")
 SAMPLE_RATE = 24000
 SUPPORTED_FORMATS = ("wav", "pcm")
-AUDIO_EXTENSIONS = {".wav", ".flac", ".mp3", ".ogg"}
-MAX_REF_BYTES = 30 * 1024 * 1024
+PROMPT_EXTENSION = ".pt"
 
 
 def _load_implementation():
@@ -89,6 +88,7 @@ def _load_flashinfer():
 _IMPLEMENTATION = _load_implementation()
 _OMNIVOICE = _IMPLEMENTATION.OmniVoice
 _GENERATION_CONFIG = _IMPLEMENTATION.OmniVoiceGenerationConfig
+_VOICE_PROMPT = _IMPLEMENTATION.VoiceClonePrompt
 
 
 class ApiError(Exception):
@@ -104,32 +104,6 @@ def error_body(message: str, code: str, type_: str = "invalid_request_error") ->
     return {"error": {"message": message, "type": type_, "param": None, "code": code}}
 
 
-def decode_audio(raw: bytes) -> np.ndarray:
-    if len(raw) > MAX_REF_BYTES:
-        raise ApiError(413, "payload_too_large", f"reference audio exceeds {MAX_REF_BYTES // 1024 // 1024} MB")
-    try:
-        wav, sr = sf.read(io.BytesIO(raw), dtype="float32", always_2d=True)
-    except Exception as exc:
-        raise ApiError(
-            400,
-            "invalid_audio",
-            f"cannot decode reference audio ({exc}); supported: wav/flac/mp3/ogg",
-        ) from exc
-    wav = wav.mean(axis=1)
-    if sr != SAMPLE_RATE:
-        import torchaudio
-
-        wav = (
-            torchaudio.functional.resample(torch.from_numpy(wav), int(sr), SAMPLE_RATE)
-            .clamp(-1.0, 1.0)
-            .numpy()
-            .astype(np.float32)
-        )
-    if wav.size < SAMPLE_RATE // 2:
-        raise ApiError(400, "audio_too_short", "reference audio must be at least 0.5 s")
-    return wav
-
-
 def encode_wav(audio: np.ndarray) -> bytes:
     buf = io.BytesIO()
     sf.write(buf, audio, SAMPLE_RATE, format="WAV", subtype="PCM_16")
@@ -142,77 +116,52 @@ def encode_pcm(audio: np.ndarray) -> bytes:
 
 
 @dataclass(frozen=True)
-class ReferenceSpec:
+class PromptSpec:
     name: str
-    audio_path: Path
-    ref_text: str
+    path: Path
 
 
-def discover_references(root: str, default_voice: str) -> tuple[list[ReferenceSpec], str]:
+def discover_prompts(root: str, default_voice: str) -> tuple[list[PromptSpec], str]:
     root_path = Path(root).expanduser()
     if not root_path.is_dir():
-        raise RuntimeError(f"reference directory does not exist: {root_path}")
+        raise RuntimeError(f"voice prompt directory does not exist: {root_path}")
 
-    audio_by_name: dict[str, Path] = {}
-    text_by_name: dict[str, Path] = {}
+    prompts_by_name: dict[str, Path] = {}
     for path in sorted(root_path.iterdir()):
         if not path.is_file() or path.name.startswith("."):
             continue
-        suffix = path.suffix.lower()
-        if suffix in AUDIO_EXTENSIONS:
-            if path.stem in audio_by_name:
-                raise RuntimeError(
-                    f"multiple reference audio files use the name '{path.stem}': "
-                    f"{audio_by_name[path.stem].name}, {path.name}"
-                )
-            audio_by_name[path.stem] = path
-        elif suffix == ".txt":
-            if path.stem in text_by_name:
-                raise RuntimeError(
-                    f"multiple reference text files use the name '{path.stem}': "
-                    f"{text_by_name[path.stem].name}, {path.name}"
-                )
-            text_by_name[path.stem] = path
+        if path.suffix.lower() != PROMPT_EXTENSION:
+            raise RuntimeError(
+                f"unexpected file in voice prompt directory: {path}; "
+                f"expected {PROMPT_EXTENSION} files only"
+            )
+        name = path.stem
+        if re.fullmatch(r"[\w-]+", name) is None:
+            raise RuntimeError(f"invalid voice prompt name: {name}")
+        if name in prompts_by_name:
+            raise RuntimeError(f"duplicate voice prompt name: {name}")
+        prompts_by_name[name] = path
 
-    audio_only = sorted(set(audio_by_name) - set(text_by_name))
-    text_only = sorted(set(text_by_name) - set(audio_by_name))
-    if audio_only:
-        raise RuntimeError(f"missing reference text for: {', '.join(audio_only)}")
-    if text_only:
-        raise RuntimeError(f"missing reference audio for: {', '.join(text_only)}")
-    if not audio_by_name:
+    if not prompts_by_name:
         raise RuntimeError(
-            f"no reference pairs found in {root_path}; expected <name>.wav + <name>.txt"
+            f"no voice prompts found in {root_path}; "
+            "run omnivoice_cli.py create-prompt to create <name>.pt files"
         )
 
-    specs = []
-    for name in sorted(audio_by_name):
-        if re.fullmatch(r"[\w-]+", name) is None:
-            raise RuntimeError(
-                f"invalid reference name '{name}'; use letters, numbers, Chinese characters, "
-                "underscores and hyphens only"
-            )
-        text_path = text_by_name[name]
-        try:
-            ref_text = text_path.read_text(encoding="utf-8").strip()
-        except (OSError, UnicodeError) as exc:
-            raise RuntimeError(f"cannot read reference text {text_path}: {exc}") from exc
-        if not ref_text:
-            raise RuntimeError(f"reference text is empty: {text_path}")
-        specs.append(ReferenceSpec(name, audio_by_name[name], ref_text))
-
+    specs = [PromptSpec(name, prompts_by_name[name]) for name in sorted(prompts_by_name)]
     requested = (default_voice or "").strip()
     if requested:
-        if requested not in audio_by_name:
+        if requested not in prompts_by_name:
             raise RuntimeError(
-                f"default voice '{requested}' was not found; available: {', '.join(sorted(audio_by_name))}"
+                f"default voice '{requested}' was not found; "
+                f"available: {', '.join(sorted(prompts_by_name))}"
             )
         resolved_default = requested
     elif len(specs) == 1:
         resolved_default = specs[0].name
     else:
         raise RuntimeError(
-            "multiple reference presets were found; pass --default-voice with one of: "
+            "multiple voice prompts were found; pass --default-voice with one of: "
             f"{', '.join(spec.name for spec in specs)}"
         )
     return specs, resolved_default
@@ -221,7 +170,7 @@ def discover_references(root: str, default_voice: str) -> tuple[list[ReferenceSp
 class PresetVoiceRegistry:
     def __init__(
         self,
-        specs: list[ReferenceSpec],
+        specs: list[PromptSpec],
         engine: "Engine",
         default_name: str,
     ):
@@ -230,26 +179,26 @@ class PresetVoiceRegistry:
         self._durations: dict[str, float] = {}
 
         started = time.perf_counter()
+        frame_rate = float(engine.model.audio_tokenizer.config.frame_rate)
         for spec in specs:
             try:
-                wav = decode_audio(spec.audio_path.read_bytes())
-            except OSError as exc:
-                raise RuntimeError(f"cannot read reference audio {spec.audio_path}: {exc}") from exc
-            prompt = engine.build_prompt(wav, spec.ref_text)
+                prompt = _VOICE_PROMPT.load(str(spec.path), map_location="cpu")
+            except Exception as exc:
+                raise RuntimeError(f"cannot load voice prompt {spec.path}: {exc}") from exc
             prompt.ref_audio_tokens = prompt.ref_audio_tokens.cpu()
             self._prompts[spec.name] = prompt
-            duration = len(wav) / SAMPLE_RATE
+            duration = prompt.ref_audio_tokens.size(-1) / frame_rate
             self._durations[spec.name] = duration
             LOG.info(
-                "loaded preset %s (%.1fs audio, %d chars ref_text)",
+                "loaded prompt %s (%.1fs audio, %d chars ref_text)",
                 spec.name,
                 duration,
-                len(spec.ref_text),
+                len(prompt.ref_text),
             )
         LOG.info(
-            "preprocessed %d preset(s) from %s in %.2fs (default=%s)",
+            "loaded %d prompt(s) from %s in %.2fs (default=%s)",
             len(self._prompts),
-            specs[0].audio_path.parent,
+            specs[0].path.parent,
             time.perf_counter() - started,
             self.default_name,
         )
@@ -341,14 +290,6 @@ class Engine:
         flashinfer_ext.apply_flashinfer(self.model)
         LOG.info("FlashInfer enabled in %.1fs", time.perf_counter() - t0)
         return True
-
-    def build_prompt(self, wav: np.ndarray, ref_text: str):
-        with torch.inference_mode():
-            return self.model.create_voice_clone_prompt(
-                ref_audio=(wav[np.newaxis, :], SAMPLE_RATE),
-                ref_text=ref_text,
-                preprocess_prompt=True,
-            )
 
     def synth(
         self,
@@ -610,7 +551,7 @@ def parse_args() -> argparse.Namespace:
         "--voices-dir",
         default=DEFAULT_VOICES_DIR,
         dest="voices_dir",
-        help="directory containing <name>.wav/flac/mp3/ogg + <name>.txt reference pairs",
+        help="directory containing <name>.pt voice prompt files",
     )
     p.add_argument(
         "--default-voice",
@@ -639,7 +580,7 @@ def main() -> None:
 
     STARTED = time.time()
     try:
-        reference_specs, default_name = discover_references(
+        prompt_specs, default_name = discover_prompts(
             args.voices_dir,
             args.default_voice,
         )
@@ -648,9 +589,9 @@ def main() -> None:
 
     ENGINE = Engine(args)
     try:
-        PRESETS = PresetVoiceRegistry(reference_specs, ENGINE, default_name)
+        PRESETS = PresetVoiceRegistry(prompt_specs, ENGINE, default_name)
     except (ApiError, RuntimeError, ValueError) as exc:
-        raise SystemExit(f"[fatal] failed to preprocess reference presets: {exc}") from exc
+        raise SystemExit(f"[fatal] failed to load voice prompts: {exc}") from exc
     GPU_SEM = asyncio.Semaphore(1)
 
     LOG.info(

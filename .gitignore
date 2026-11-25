@@ -36,8 +36,7 @@ torch_compile_cache/
 *.log
 logs/
 
-# Generated and reference audio
-# Use "git add -f your.wav" only when audio must be tracked.
+# Generated audio
 *.wav
 *.pcm
 *.mp3
@@ -46,6 +45,14 @@ logs/
 *.m4a
 out/
 samples/
+
+# Tracked source voice assets
+!assets/
+!assets/*.wav
+!assets/*.txt
+
+# Generated voice prompts
+voices/*.pt
 
 # Local configuration and credentials
 .env

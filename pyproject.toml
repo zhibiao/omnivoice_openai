@@ -34,7 +34,7 @@ flashinfer = [
 
 [project.scripts]
 omnivoice-server = "omnivoice_server:main"
-omnivoice-infer = "inference:main"
+omnivoice-cli = "omnivoice_cli:main"
 
 [tool.uv.sources]
 torch = [
@@ -53,7 +53,7 @@ explicit = true
 include = [
     "omnivoice.py",
     "omnivoice_flashinfer.py",
-    "inference.py",
+    "omnivoice_cli.py",
     "omnivoice_server.py",
     "web",
 ]
@@ -62,7 +62,7 @@ include = [
 only-include = [
     "omnivoice.py",
     "omnivoice_flashinfer.py",
-    "inference.py",
+    "omnivoice_cli.py",
     "omnivoice_server.py",
     "web",
 ]

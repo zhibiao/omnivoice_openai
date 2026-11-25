@@ -3,6 +3,7 @@
 .aws
 .codex
 .venv
+assets
 models
 voices
 .inductor-cache
