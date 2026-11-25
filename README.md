@@ -24,7 +24,8 @@ uv sync --extra flashinfer
 
 ## Create a voice
 
-Each voice requires a matching audio and text file in `assets/`:
+Reference audio is normally kept in `assets/`. The transcript may be provided
+as a `.txt` file or as literal text:
 
 ```text
 assets/
@@ -34,15 +35,27 @@ assets/
 
 Supported audio formats: `wav`, `flac`, `mp3`, and `ogg`.
 
-Create or rebuild all voice prompts:
+Create or rebuild one voice prompt:
 
 ```bash
 .venv/bin/python omnivoice_cli.py create-prompt \
   --model models/OmniVoice \
-  --assets-dir assets \
+  --voice-id nana \
+  --ref-audio assets/nana.wav \
+  --ref-text assets/nana.txt \
   --voices-dir voices \
   --device cuda:0 \
   --dtype float16
+```
+
+`--ref-text` accepts either an existing `.txt` file or literal text:
+
+```bash
+.venv/bin/python omnivoice_cli.py create-prompt \
+  --voice-id nana \
+  --ref-audio assets/nana.wav \
+  --ref-text "Reference transcript." \
+  --voices-dir voices
 ```
 
 For `assets/nana.wav` and `assets/nana.txt`, this creates:
@@ -53,16 +66,22 @@ voices/
 ```
 
 Use `--device cpu --dtype float32` when preparing prompts without a GPU.
-The prompt name is derived from the source filename. To add another voice,
-create `<name>.wav` and `<name>.txt` in `assets/`, then run the command again.
+The prompt name is derived from the reference audio filename. To add another
+voice, run `create-prompt` again with its audio file and transcript.
 
 The server loads `voices/*.pt` only and does not read files from `assets/`.
 
 ## Start the server
 
 ```bash
-.venv/bin/python omnivoice_server.py --port 8003
+.venv/bin/python omnivoice_server.py \
+  --flashinfer off \
+  --compile dynamic \
+  --port 8003
 ```
+
+The default backend is fp16 with `torch.compile(model.llm, dynamic=True)`.
+Use `--flashinfer on` only on a supported GPU with FlashInfer installed.
 
 Open the web interface:
 
@@ -141,15 +160,17 @@ Create with a saved prompt:
 .venv/bin/python omnivoice_cli.py clone \
   --text "Hello, this is OmniVoice." \
   --output output.wav \
-  --prompt voices/nana.pt \
+  --voice-id nana \
   --language English \
   --num_step 32
 ```
 
 Use `--ref_audio assets/nana.wav --ref_text "Reference transcript."` instead
-of `--prompt` to clone directly from reference files.
+of `--voice-id` to clone directly from reference files. Use `--prompt` to
+load a specific prompt path.
 
-Use `--flashinfer off` to disable FlashInfer or `--flashinfer on` to require it.
+The CLI uses `--compile dynamic` by default. Use `--compile off` for eager
+execution or `--flashinfer on` to require FlashInfer.
 
 ## Docker
 
@@ -178,7 +199,7 @@ docker build --build-arg INSTALL_FLASHINFER=true -t omnivoice-openai .
 | `--model` | `models/OmniVoice` | Model path or Hugging Face repo ID |
 | `--device` | `cuda:0` | CUDA device |
 | `--num-step` | `32` | Default generation steps |
-| `--flashinfer` | `auto` | `auto`, `on`, or `off` |
+| `--flashinfer` | `off` | `auto`, `on`, or `off` |
 | `--voices-dir` | `voices` | Voice prompt directory |
 | `--default-voice` | `nana` | Default voice |
 | `--api-key` | empty | Optional bearer token |

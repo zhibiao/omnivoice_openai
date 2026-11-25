@@ -115,10 +115,16 @@ def _add_model_args(parser: argparse.ArgumentParser, include_backend=False) -> N
     )
     if include_backend:
         parser.add_argument(
+            "--compile",
+            default="dynamic",
+            choices=["off", "dynamic", "static"],
+            help="Compile the LLM when FlashInfer is disabled.",
+        )
+        parser.add_argument(
             "--flashinfer",
-            default="auto",
+            default="off",
             choices=["auto", "on", "off"],
-            help="Use FlashInfer when available.",
+            help="Use FlashInfer when available; off uses torch.compile.",
         )
         parser.add_argument(
             "--cuda-graph",
@@ -127,47 +133,23 @@ def _add_model_args(parser: argparse.ArgumentParser, include_backend=False) -> N
         )
 
 
-def discover_references(root: Path) -> list[tuple[str, Path, str]]:
-    if not root.is_dir():
-        raise RuntimeError(f"assets directory does not exist: {root}")
-
-    audio_by_name: dict[str, Path] = {}
-    text_by_name: dict[str, Path] = {}
-    for path in sorted(root.iterdir()):
-        if not path.is_file() or path.name.startswith("."):
-            continue
-        suffix = path.suffix.lower()
-        if suffix in _AUDIO_EXTENSIONS:
-            if path.stem in audio_by_name:
-                raise RuntimeError(f"duplicate reference audio: {path.stem}")
-            audio_by_name[path.stem] = path
-        elif suffix == ".txt":
-            if path.stem in text_by_name:
-                raise RuntimeError(f"duplicate reference text: {path.stem}")
-            text_by_name[path.stem] = path
-
-    audio_only = sorted(set(audio_by_name) - set(text_by_name))
-    text_only = sorted(set(text_by_name) - set(audio_by_name))
-    if audio_only:
-        raise RuntimeError(f"missing reference text for: {', '.join(audio_only)}")
-    if text_only:
-        raise RuntimeError(f"missing reference audio for: {', '.join(text_only)}")
-    if not audio_by_name:
-        raise RuntimeError(f"no reference pairs found in {root}")
-
-    references = []
-    for name in sorted(audio_by_name):
-        if re.fullmatch(r"[\w-]+", name) is None:
-            raise RuntimeError(f"invalid voice name: {name}")
-        text_path = text_by_name[name]
+def read_reference_text(value: str) -> str:
+    """Return literal text or the contents of an existing UTF-8 .txt file."""
+    path = Path(value).expanduser()
+    if path.suffix.lower() == ".txt":
+        if not path.is_file():
+            raise RuntimeError(f"reference text file does not exist: {path}")
         try:
-            ref_text = text_path.read_text(encoding="utf-8").strip()
+            text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeError) as exc:
-            raise RuntimeError(f"cannot read reference text {text_path}: {exc}") from exc
-        if not ref_text:
-            raise RuntimeError(f"reference text is empty: {text_path}")
-        references.append((name, audio_by_name[name], ref_text))
-    return references
+            raise RuntimeError(f"cannot read reference text {path}: {exc}") from exc
+    else:
+        text = value
+
+    text = text.strip()
+    if not text:
+        raise RuntimeError("reference text is empty")
+    return text
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -179,14 +161,24 @@ def build_parser() -> argparse.ArgumentParser:
 
     create = subparsers.add_parser(
         "create-prompt",
-        help="Create voices/<name>.pt from assets/<name> audio and text.",
+        help="Create a voice prompt from reference audio and text.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     _add_model_args(create)
     create.add_argument(
-        "--assets-dir",
-        default=str(_PKG_DIR / "assets"),
-        help="Directory containing <name> audio files and <name>.txt.",
+        "--ref-audio",
+        required=True,
+        help="Reference audio file.",
+    )
+    create.add_argument(
+        "--ref-text",
+        required=True,
+        help="Reference transcript text or an existing .txt file.",
+    )
+    create.add_argument(
+        "--voice-id",
+        default=None,
+        help="Prompt identifier; defaults to the reference audio filename.",
     )
     create.add_argument(
         "--voices-dir",
@@ -203,6 +195,16 @@ def build_parser() -> argparse.ArgumentParser:
     clone.add_argument("--text", required=True)
     clone.add_argument("--output", required=True)
     clone.add_argument("--prompt", default=None, help="Saved voices/<name>.pt file.")
+    clone.add_argument(
+        "--voice-id",
+        default=None,
+        help="Voice prompt ID resolved under --voices-dir.",
+    )
+    clone.add_argument(
+        "--voices-dir",
+        default=str(_PKG_DIR / "voices"),
+        help="Directory containing <voice-id>.pt prompt files.",
+    )
     clone.add_argument("--ref_audio", default=None)
     clone.add_argument("--ref_text", default=None)
     clone.add_argument("--instruct", default=None)
@@ -240,14 +242,14 @@ def _load_model(args):
     return model.eval()
 
 
-def _enable_flashinfer(model, args) -> None:
+def _enable_flashinfer(model, args) -> bool:
     if args.flashinfer == "off":
-        return
+        return False
     if model.device.type != "cuda":
         if args.flashinfer == "on":
             raise RuntimeError("--flashinfer on requires a CUDA device")
         logging.warning("FlashInfer requires CUDA; using standard attention")
-        return
+        return False
 
     try:
         flashinfer = _load_flashinfer()
@@ -258,61 +260,97 @@ def _enable_flashinfer(model, args) -> None:
                 "and flashinfer-jit-cache"
             ) from exc
         logging.warning("FlashInfer unavailable; using standard attention: %s", exc)
-        return
+        return False
 
     flashinfer.apply_flashinfer(
         model,
         enable_cuda_graph=args.cuda_graph,
     )
     logging.info("FlashInfer enabled (cuda_graph=%s)", args.cuda_graph)
+    return True
 
 
-def create_prompts(args) -> None:
-    assets_dir = Path(args.assets_dir).expanduser().resolve()
+def create_prompt(args) -> None:
     voices_dir = Path(args.voices_dir).expanduser().resolve()
-    references = discover_references(assets_dir)
+    audio_path = Path(args.ref_audio).expanduser().resolve()
+    if not audio_path.is_file():
+        raise RuntimeError(f"reference audio does not exist: {audio_path}")
+    if audio_path.suffix.lower() not in _AUDIO_EXTENSIONS:
+        raise RuntimeError(
+            f"unsupported reference audio format: {audio_path.suffix}; "
+            f"expected {', '.join(sorted(_AUDIO_EXTENSIONS))}"
+        )
+    voice_id = (args.voice_id or audio_path.stem).strip()
+    if re.fullmatch(r"[\w-]+", voice_id) is None:
+        raise RuntimeError(f"invalid voice ID: {voice_id}")
+    if audio_path.stat().st_size > _MAX_REF_BYTES:
+        raise RuntimeError("reference audio exceeds 30 MB")
+    ref_text = read_reference_text(args.ref_text)
+
     voices_dir.mkdir(parents=True, exist_ok=True)
     model = _load_model(args)
 
-    for name, audio_path, ref_text in references:
-        if audio_path.stat().st_size > _MAX_REF_BYTES:
-            raise RuntimeError(f"reference audio exceeds 30 MB: {audio_path}")
-        wav = _impl.load_audio(str(audio_path), model.sampling_rate)
-        duration = wav.shape[-1] / model.sampling_rate
-        if duration < 0.5:
-            raise RuntimeError(f"reference audio is shorter than 0.5 seconds: {audio_path}")
+    wav = _impl.load_audio(str(audio_path), model.sampling_rate)
+    duration = wav.shape[-1] / model.sampling_rate
+    if duration < 0.5:
+        raise RuntimeError("reference audio is shorter than 0.5 seconds")
 
-        with torch.inference_mode():
-            prompt = model.create_voice_clone_prompt(
-                ref_audio=(wav, model.sampling_rate),
-                ref_text=ref_text,
-                preprocess_prompt=True,
-            )
-        prompt.ref_audio_tokens = prompt.ref_audio_tokens.cpu()
-        output_path = voices_dir / f"{name}.pt"
-        prompt.save(str(output_path))
-        logging.info(
-            "Created %s (%.2fs, tokens=%s)",
-            output_path,
-            duration,
-            tuple(prompt.ref_audio_tokens.shape),
+    with torch.inference_mode():
+        prompt = model.create_voice_clone_prompt(
+            ref_audio=(wav, model.sampling_rate),
+            ref_text=ref_text,
+            preprocess_prompt=True,
         )
+    prompt.ref_audio_tokens = prompt.ref_audio_tokens.cpu()
+    output_path = voices_dir / f"{voice_id}.pt"
+    prompt.save(str(output_path))
+    logging.info(
+        "Created %s (%.2fs, tokens=%s)",
+        output_path,
+        duration,
+        tuple(prompt.ref_audio_tokens.shape),
+    )
 
 
 def clone(args) -> None:
-    if args.prompt and (args.ref_audio or args.ref_text):
-        raise RuntimeError("use either --prompt or --ref_audio/--ref_text")
-    if not args.prompt and not (args.ref_audio and args.ref_text):
-        raise RuntimeError("clone requires --prompt or --ref_audio with --ref_text")
+    prompt_sources = sum(bool(x) for x in (args.prompt, args.voice_id))
+    if prompt_sources > 1:
+        raise RuntimeError("use only one of --prompt or --voice-id")
+    if prompt_sources and (args.ref_audio or args.ref_text):
+        raise RuntimeError(
+            "use either --prompt/--voice-id or --ref_audio/--ref_text"
+        )
+    if not prompt_sources and not (args.ref_audio and args.ref_text):
+        raise RuntimeError(
+            "clone requires --prompt, --voice-id, "
+            "or --ref_audio with --ref_text"
+        )
     if bool(args.ref_audio) != bool(args.ref_text):
         raise RuntimeError("--ref_audio and --ref_text must be provided together")
 
     model = _load_model(args)
-    _enable_flashinfer(model, args)
+    flashinfer_enabled = _enable_flashinfer(model, args)
+    if not flashinfer_enabled and args.compile != "off":
+        logging.info(
+            "Compiling LLM with torch.compile(dynamic=%s)",
+            args.compile == "dynamic",
+        )
+        model.llm = torch.compile(
+            model.llm,
+            dynamic=(args.compile == "dynamic"),
+        )
 
     prompt = None
-    if args.prompt:
-        prompt_path = Path(args.prompt).expanduser()
+    if args.prompt or args.voice_id:
+        if args.voice_id:
+            voice_id = args.voice_id.strip()
+            if re.fullmatch(r"[\w-]+", voice_id) is None:
+                raise ValueError(f"invalid voice ID: {voice_id}")
+            prompt_path = (
+                Path(args.voices_dir).expanduser() / f"{voice_id}.pt"
+            )
+        else:
+            prompt_path = Path(args.prompt).expanduser()
         if prompt_path.suffix.lower() != ".pt":
             raise ValueError("voice prompt must use the .pt extension")
         prompt = VoiceClonePrompt.load(str(prompt_path), map_location="cpu")
@@ -354,7 +392,7 @@ def main(argv=None) -> None:
 
     args = build_parser().parse_args(argv)
     if args.command == "create-prompt":
-        create_prompts(args)
+        create_prompt(args)
     else:
         clone(args)
 

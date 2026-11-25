@@ -527,7 +527,8 @@ if WEB_DIR.is_dir():
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="OmniVoice OpenAI-compatible TTS server (GPU, fp16, FlashInfer, voice cloning)"
+        description="OmniVoice OpenAI-compatible TTS server "
+        "(GPU, fp16, torch.compile, voice cloning)"
     )
     p.add_argument("--host", default="0.0.0.0")
     p.add_argument("--port", type=int, default=8003)
@@ -537,10 +538,10 @@ def parse_args() -> argparse.Namespace:
                    help="torch.compile mode for the LLM backbone (default: dynamic)")
     p.add_argument(
         "--flashinfer",
-        default="auto",
+        default="off",
         choices=["auto", "on", "off"],
         help="FlashInfer backend: auto enables it when installed, on requires it, "
-        "off disables it (default: auto). FlashInfer takes precedence over --compile.",
+        "off uses the torch.compile path (default: off).",
     )
     p.add_argument("--num-step", type=int, default=32, dest="num_step", help="default diffusion steps (16 or 32)")
     p.add_argument("--format", default="wav", choices=list(SUPPORTED_FORMATS), help="default response format")
